@@ -855,8 +855,8 @@ class Job {
       <div class="ctrl-group">
         <div class="ctrl-label"><span>Траектория</span><b>СКОЛЬЖЕНИЕ / ВРАЩЕНИЕ</b></div>
         <div class="steer-pad">
-          <button class="hold-btn" data-hold="up">▲ ВВЕРХ<small>поднять головку</small></button>
-          <button class="hold-btn" data-hold="down">▼ ВНИЗ<small>заглубить</small></button>
+          <button class="hold-btn" id="steer-up" data-hold="up">▲ ВВЕРХ<small>поднять головку</small></button>
+          <button class="hold-btn" id="steer-down" data-hold="down">▼ ВНИЗ<small>заглубить</small></button>
         </div>
       </div>
       <div class="ctrl-group">
@@ -878,8 +878,8 @@ class Job {
     </div>`;
 
     this.bindHold($('feed-btn'), 'feed');
-    this.bindHold($('[data-hold="up"]'), 'up');
-    this.bindHold($('[data-hold="down"]'), 'down');
+    this.bindHold($('steer-up'), 'up');
+    this.bindHold($('steer-down'), 'down');
     $('auto-feed').addEventListener('change', (e) => {
       this.input.auto = e.target.checked;
       sound.click();
