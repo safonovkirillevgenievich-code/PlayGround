@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+  <meta name="theme-color" content="#071017">
+  <title>Avto-M Driller HDD 2.0 — симулятор бригады ГНБ</title>
+  <meta name="description" content="Симулятор горизонтально-направленного бурения: пилотная скважина, локация, буровой раствор, расширение и протяжка коммуникации.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23ff7a1a'/%3E%3Ctext x='32' y='42' font-family='Arial' font-size='26' font-weight='900' text-anchor='middle' fill='%23171008'%3EAM%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main id="app">
+
+  <!-- ============ TITLE ============ -->
+  <section id="screen-title" class="screen title-screen active">
+    <header class="title-topbar">
+      <div class="brand">
+        <div class="brand-mark">AM</div>
+        <div class="brand-name">AVTO-M<small>HDD SIMULATOR</small></div>
+      </div>
+      <div class="top-actions">
+        <button class="btn btn-icon" id="btn-sound" title="Звук" aria-label="Переключить звук">♪</button>
+        <button class="btn btn-sm" id="btn-title-help">Как играть</button>
+      </div>
+    </header>
+
+    <div class="title-grid">
+      <div class="title-copy">
+        <p class="eyebrow">Симулятор бригады ГНБ</p>
+        <h1>Avto-M<br><span>Driller</span></h1>
+        <div class="version-line">
+          <span class="version-badge">HDD 2.0</span>
+          <span class="line"></span>
+          <span class="muted" style="font-size:10px;letter-spacing:.14em;text-transform:uppercase">Пилот · Раствор · Расширение · Протяжка</span>
+        </div>
+        <p class="lede">
+          Проведите пилотную скважину по проекту, удержите головку от коммуникаций,
+          подберите раствор и расширитель — а потом протяните трубу без перегрузки.
+          <b>Пять этапов, пять специалистов, реальные последствия решений.</b>
+        </p>
+        <div class="title-actions">
+          <button class="btn btn-primary btn-lg" id="btn-new-shift">Начать смену <span aria-hidden="true">→</span></button>
+          <button class="btn btn-ghost btn-lg" id="btn-title-crew">Бригада</button>
+        </div>
+        <div class="title-metrics">
+          <div class="metric"><b id="tm-money">$85,000</b><span>Баланс</span></div>
+          <div class="metric"><b id="tm-shifts">0</b><span>Объектов сдано</span></div>
+          <div class="metric"><b id="tm-stars">—</b><span>Лучший результат</span></div>
+        </div>
+      </div>
+
+      <div class="title-visual">
+        <div class="hero-frame">
+          <canvas id="hero-canvas" aria-label="Строительная площадка ГНБ"></canvas>
+          <div class="hero-scanline"></div>
+          <div class="hero-chip chip-1"><span class="dot"></span><div>Пилотная скважина<b id="hero-depth">−4,8 м · уклон −11°</b></div></div>
+          <div class="hero-chip chip-2"><span class="dot" style="background:#5ed6ff;box-shadow:0 0 12px #5ed6ff"></span><div>Локатор<b>сигнал стабилен</b></div></div>
+          <div class="hero-chip chip-3"><span class="dot" style="background:#ffb15c;box-shadow:0 0 12px #ffb15c"></span><div>D24 · 24 т тяги<b>раствор 62 бар</b></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="title-features">
+      <div class="feature"><span class="feature-icon">⌖</span><div><b>Траектория и локация</b><p>Ведите головку по проекту, следите за уклоном и не заденьте подземные сети.</p></div></div>
+      <div class="feature"><span class="feature-icon">◈</span><div><b>Пять этапов ГНБ</b><p>Подготовка, пилот, промывка, расширение и протяжка — без упрощений.</p></div></div>
+      <div class="feature"><span class="feature-icon">▲</span><div><b>Бригада и экономика</b><p>Нанимайте специалистов, платите зарплату и зарабатывайте репутацию.</p></div></div>
+    </div>
+  </section>
+
+  <!-- ============ CONTRACTS ============ -->
+  <section id="screen-contracts" class="screen page screen-grid">
+    <header class="page-topbar">
+      <button class="btn btn-icon" id="btn-contracts-back" title="На главную" aria-label="На главную">←</button>
+      <div class="brand"><div class="brand-mark">AM</div><div class="brand-name">AVTO-M<small>ДИСПЕТЧЕРСКАЯ</small></div></div>
+      <div class="spacer"></div>
+      <button class="btn btn-sm" id="btn-contracts-crew">Бригада</button>
+      <div class="money-pill"><small>Баланс</small><span id="contracts-money">$85,000</span></div>
+    </header>
+    <div class="page-scroll">
+      <div class="page-body">
+        <div class="page-heading">
+          <p class="eyebrow">Диспетчерская · заказы</p>
+          <h2>Выберите объект</h2>
+          <p>Каждый заказ — свой грунт, коммуникации и бюджет. Перед выходом на площадку проверьте состав бригады: сильные специалисты стоят дороже, но снижают риск аварий.</p>
+        </div>
+        <div class="contracts-layout">
+          <div class="contract-list" id="contract-list"></div>
+          <aside class="aside-stack">
+            <div class="panel">
+              <div class="aside-title">Бригада на смену</div>
+              <div class="crew-mini" id="crew-mini"></div>
+              <div class="aside-total"><span>Фонд оплаты труда</span><b id="crew-wage">$0</b></div>
+            </div>
+            <div class="panel tip-card">
+              <b>Совет диспетчера</b>
+              <span id="dispatch-tip">Сначала изучите архив коммуникаций. Неизвестная линия на трассе — самая дорогая ошибка оператора.</span>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CREW ============ -->
+  <section id="screen-crew" class="screen page screen-grid">
+    <header class="page-topbar">
+      <button class="btn btn-icon" id="btn-crew-back" title="Назад" aria-label="Назад">←</button>
+      <div class="brand"><div class="brand-mark">AM</div><div class="brand-name">AVTO-M<small>БРИГАДА</small></div></div>
+      <div class="spacer"></div>
+      <div class="money-pill"><small>Баланс</small><span id="crew-money">$85,000</span></div>
+    </header>
+    <div class="page-scroll">
+      <div class="crew-wrap">
+        <div class="crew-head">
+          <div class="page-heading" style="margin:0">
+            <p class="eyebrow">Кадровое решение</p>
+            <h2>Соберите бригаду</h2>
+            <p>Опыт растёт с каждым сданным объектом. Ставка списывается за смену, поэтому дорогая бригада должна окупаться качеством и скоростью.</p>
+          </div>
+          <div class="crew-budget">
+            <div class="metric"><b id="crew-total-wage">$0</b><span>ФОТ за смену</span></div>
+            <div class="metric"><b id="crew-levels">0</b><span>Суммарный уровень</span></div>
+          </div>
+        </div>
+        <div id="crew-list"></div>
+        <div class="crew-footer">
+          <p>Каждый специалист даёт свой бонус. Локаторщик снижает погрешность, механик бережёт штанги, бригадир увеличивает премию за качество.</p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn btn-ghost" id="btn-crew-reset">Сбросить выбор</button>
+            <button class="btn btn-primary" id="btn-crew-confirm">Подтвердить бригаду →</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ GAME ============ -->
+  <section id="screen-game" class="screen game-screen">
+    <header class="gamebar">
+      <button class="btn btn-icon" id="btn-game-exit" title="Выйти на базу" aria-label="Выйти на базу" style="width:34px;height:34px;min-height:0">←</button>
+      <div class="brand-mark">AM</div>
+      <div class="job-id"><b id="job-title">Объект</b><span id="job-code">AM-0000 · подготовка</span></div>
+      <div class="stage-track" id="stage-track"></div>
+      <div class="game-stats">
+        <div class="stat-pill"><small>СМЕТА</small><span id="hud-spent">$0</span></div>
+        <div class="stat-pill"><small>ВРЕМЯ</small><span id="hud-clock">08:00</span></div>
+      </div>
+      <button class="btn btn-icon" id="btn-pause" title="Пауза" aria-label="Пауза" style="width:38px;height:38px;min-height:0">II</button>
+    </header>
+
+    <div class="game-main">
+      <div class="stage-wrap" id="stage-wrap">
+        <canvas id="game-canvas" aria-label="Разрез строительной площадки и скважины"></canvas>
+        <div class="stage-hud" id="stage-hud"></div>
+        <div class="warn-line" id="warn-line"></div>
+        <div class="bar-stack" id="bar-stack"></div>
+        <div class="toast-layer" id="toast-layer"></div>
+        <div class="mobile-crew" id="mobile-crew"></div>
+
+        <div class="overlay hidden" id="pause-overlay">
+          <div class="modal-card" style="max-width:460px">
+            <p class="eyebrow">Смена приостановлена</p>
+            <h2>Пауза</h2>
+            <p class="sub">Бурение и таймер остановлены. Можно вернуться на площадку или сдать объект диспетчеру.</p>
+            <div class="modal-actions">
+              <button class="btn btn-primary" id="btn-resume">Продолжить</button>
+              <button class="btn" id="btn-abandon">Покинуть объект</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="overlay hidden" id="results-overlay">
+          <div class="modal-card" id="results-card"></div>
+        </div>
+
+        <div class="overlay hidden sheet-overlay" id="sheet-overlay">
+          <div class="modal-card" id="sheet-card"></div>
+        </div>
+
+        <div class="overlay hidden" id="exit-confirm">
+          <div class="modal-card" style="max-width:440px">
+            <p class="eyebrow">Внимание</p>
+            <h2>Покинуть объект?</h2>
+            <p class="sub">Незавершённая смена будет прервана. Бригаде всё равно начислят мобилизацию $2,500.</p>
+            <div class="modal-actions">
+              <button class="btn" id="btn-exit-cancel">Остаться</button>
+              <button class="btn btn-danger" id="btn-exit-confirm">Покинуть</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="game-side">
+        <div class="side-block">
+          <div class="side-title">Бригада на объекте <span id="crew-active-label">подготовка</span></div>
+          <div class="crew-side" id="crew-side"></div>
+        </div>
+        <div class="side-block log-block">
+          <div class="side-title">Радиосвязь <span class="live-dot"></span></div>
+          <div class="radio-log" id="radio-log"></div>
+        </div>
+      </aside>
+    </div>
+
+    <footer class="deck" id="deck"></footer>
+  </section>
+
+  <!-- ============ HELP ============ -->
+  <div class="overlay hidden" id="help-overlay" style="position:fixed;z-index:60">
+    <div class="modal-card" id="help-card">
+      <div class="modal-kicker">
+        <p class="eyebrow">Инструктаж</p>
+        <button class="btn btn-icon" id="btn-help-close" aria-label="Закрыть" style="width:34px;height:34px;min-height:0">×</button>
+      </div>
+      <h2>Как играть</h2>
+      <p class="sub">Это симулятор бригады ГНБ. Успех зависит не от скорости протяжки, а от траектории, раствора и состояния инструмента.</p>
+      <div class="help-grid">
+        <div class="help-block">
+          <h4>Управление</h4>
+          <ul>
+            <li><span class="key">Space</span> — подача (удерживать)</li>
+            <li><span class="key">↑</span> / <span class="key">↓</span> — изменить уклон</li>
+            <li><span class="key">R</span> — вращение вкл/выкл</li>
+            <li><span class="key">P</span> / <span class="key">Esc</span> — пауза</li>
+            <li>На телефоне — кнопки в нижней панели.</li>
+          </ul>
+        </div>
+        <div class="help-block">
+          <h4>Пилотная скважина</h4>
+          <p>Ведите головку по пунктирной проектной линии. При включённом вращении уклон меняется медленно — для управления выключите вращение и работайте «на скольжении».</p>
+        </div>
+        <div class="help-block">
+          <h4>Пять этапов</h4>
+          <ul>
+            <li>Подготовка: сканирование, разметка, раствор, расширитель.</li>
+            <li>Пилот: траектория и коммуникации.</li>
+            <li>Промывка: давление в рабочем окне.</li>
+            <li>Расширение: нагрузка на инструмент.</li>
+            <li>Протяжка: усилие и сохранность трубы.</li>
+          </ul>
+        </div>
+        <div class="help-block">
+          <h4>Бригада</h4>
+          <p>Локаторщик уменьшает шум сигнала, специалист по раствору расширяет окно давления, механик снижает износ, бригадир увеличивает премию. Опыт растёт после каждого объекта.</p>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="btn-help-ok">Понятно</button>
+        <button class="btn btn-danger" id="btn-reset-progress">Сбросить прогресс</button>
+      </div>
+    </div>
+  </div>
+
+</main>
+<script type="module" src="src/app.js"></script>
+</body>
+</html>
