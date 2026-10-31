@@ -726,14 +726,16 @@ class Job {
   pressureWindow() {
     const mix = MIXES[this.prep.mud] || MIXES.bentonite;
     const mud = this.crew.mud;
-    return { low: 36, high: 64 + mix.window + mud.effective * 1.2 + (this.prep.safety ? 1 : 0) };
+    const mudPenalty = this.crew.foreman.mods.mudPenalty || 0;
+    return { low: 36, high: 64 + mix.window + mud.effective * 1.2 + (this.prep.safety ? 1 : 0) - mudPenalty * 0.5 };
   }
 
   mudWindow() {
     const mix = MIXES[this.prep.mud] || MIXES.bentonite;
     const mud = this.crew.mud;
+    const mudPenalty = this.crew.foreman.mods.mudPenalty || 0;
     const add = this.stageData.additive ? 9 : 0;
-    return { low: 40, high: 62 + mix.window + mud.effective * 1.3 + add };
+    return { low: 40, high: 62 + mix.window + mud.effective * 1.3 + add - mudPenalty };
   }
 
   setText(el, txt) {
@@ -790,7 +792,12 @@ class Job {
     const ahead = this.utilities
       .filter(u => !u.hit && u.x > this.head.x - 1 && u.x - this.head.x < 12)
       .sort((a, b) => a.x - b.x)[0];
-    if (this.input.rot && (this.input.up || this.input.down)) warnings.push({ text: 'Вращение включено — управление уклоном ослаблено' });
+    if (this.input.rot && (this.input.up || this.input.down || this.holds.up || this.holds.down)) {
+      warnings.push({ text: 'Вращение включено — идём по уклону. Для глубины выключите вращение' });
+    }
+    if (!this.input.rot && (this.holds.up || this.holds.down)) {
+      warnings.push({ text: 'Точная корректировка глубины: подача замедлена' });
+    }
     if (Math.abs(dev) > 0.55) warnings.push({ text: `Отклонение от проекта ${fmtNum(Math.abs(dev), 1)} м`, danger: Math.abs(dev) > 1.2 });
     if (this.pressure > w.high) warnings.push({ text: 'Давление выше окна — риск выхода раствора', danger: true });
     if (ahead) {
@@ -853,7 +860,7 @@ class Job {
     this.ventCd = 0;
     $('deck').innerHTML = `<div class="deck-inner controls pilot-controls">
       <div class="ctrl-group">
-        <div class="ctrl-label"><span>Траектория</span><b>СКОЛЬЖЕНИЕ / ВРАЩЕНИЕ</b></div>
+        <div class="ctrl-label"><span>Траектория</span><b>УКЛОН / ГЛУБИНА</b></div>
         <div class="steer-pad">
           <button class="hold-btn" id="steer-up" data-hold="up">▲ ВВЕРХ<small>поднять головку</small></button>
           <button class="hold-btn" id="steer-down" data-hold="down">▼ ВНИЗ<small>заглубить</small></button>
@@ -867,7 +874,7 @@ class Job {
       <div class="ctrl-group">
         <div class="ctrl-label"><span>Вращение</span><b id="rot-read">ВКЛ</b></div>
         <button class="toggle-btn green on" id="rot-btn">ВРАЩЕНИЕ ВКЛ</button>
-        <p class="hint">Выключите вращение, чтобы точнее менять уклон.</p>
+        <p class="hint" id="rot-hint">ВКЛ — проходка по заданному уклону. ВЫКЛ — точная корректировка глубины кнопками вверх/вниз.</p>
       </div>
       <div class="ctrl-group">
         <div class="ctrl-label"><span>Раствор</span><b id="vent-hint">окно давления</b></div>
@@ -890,6 +897,10 @@ class Job {
       rot.classList.toggle('on', on);
       rot.textContent = `ВРАЩЕНИЕ ${on ? 'ВКЛ' : 'ВЫКЛ'}`;
       $('rot-read').textContent = on ? 'ВКЛ' : 'ВЫКЛ';
+      const hint = $('rot-hint');
+      if (hint) hint.textContent = on
+        ? 'ВКЛ — проходка по заданному уклону. Для смены глубины выключите вращение.'
+        : 'ВЫКЛ — точная корректировка глубины кнопками вверх/вниз. Подача замедлена.';
     };
     rot.addEventListener('click', () => { setRot(!this.input.rot); sound.click(); });
     this.rotBtn = rot;
@@ -938,13 +949,14 @@ class Job {
       ? 0.86 + this.crew.locator.effective * 0.045
       : 1;
     const steerFactor = (0.76 + op.effective * 0.055) * (op.mods.steer || 1) * locatorAssist;
-    const steerEffect = this.input.rot ? 0.19 : 1;
+    const steerEffect = this.input.rot ? 0.05 : 1;
     const pitchRate = 31 * steerFactor * steerEffect;
 
     this.head.pitch = clamp(this.head.pitch + steer * pitchRate * dt, -34, 34);
     const layer = c.layers.find(l => this.head.d >= l.top && this.head.d < l.bottom);
     const hardness = layer?.hardness || 1;
-    const speed = thrust * 2.35 * (SOILS[c.soil].speed / hardness) * (0.84 + op.effective * 0.045);
+    const rotationSpeed = this.input.rot ? 1 : 0.55;
+    const speed = thrust * 2.35 * (SOILS[c.soil].speed / hardness) * (0.84 + op.effective * 0.045) * rotationSpeed;
     const rad = this.head.pitch * Math.PI / 180;
     this.head.x += Math.cos(rad) * speed * dt;
     this.head.d += Math.sin(rad) * speed * dt;
@@ -1181,7 +1193,8 @@ class Job {
     sd.time += dt;
     sd.pumping = sd.flow > 8;
     const wobble = Math.sin(this.simT * 1.35 + 1) * 2.6 + Math.sin(this.simT * 3.3) * 1.1;
-    const target = 12 + sd.flow * 0.62 + this.contract.maxDepth * 2.3 + SOILS[this.contract.soil].mud * 0.35 + wobble;
+    const rush = this.crew.foreman.mods.rush ? 2.5 : 0;
+    const target = 12 + sd.flow * 0.62 + this.contract.maxDepth * 2.3 + SOILS[this.contract.soil].mud * 0.35 + wobble + rush;
     sd.pressure = lerp(sd.pressure, target, 1 - Math.exp(-dt * 1.7));
 
     if (sd.pressure >= w.low && sd.pressure <= w.high) {
