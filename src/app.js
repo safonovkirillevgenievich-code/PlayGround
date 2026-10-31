@@ -748,7 +748,8 @@ class Job {
     if (!r.depth) return;
     const c = this.contract;
     const loc = this.crew.locator;
-    const noise = clamp(0.42 - loc.effective * 0.05, 0.08, 0.65) * (loc.mods.noise || 1);
+    const manualFocus = loc.mods.manual && this.prep.route !== 'laser' ? 0.82 : 1;
+    const noise = clamp(0.42 - loc.effective * 0.05, 0.08, 0.65) * (loc.mods.noise || 1) * manualFocus;
     const depthRead = this.head.d + Math.sin(this.simT * 1.3) * noise + Math.sin(this.simT * 0.47 + 1.7) * noise * 0.55;
     const pitchRead = this.head.pitch + Math.sin(this.simT * 0.9 + 0.4) * noise * 3.2;
     const dev = this.head.d - designDepthAt(c, this.head.x);
@@ -1078,7 +1079,8 @@ class Job {
     const exitErr = Math.abs(this.head.d - c.exitDepth);
     this.exitError = exitErr;
     const routeBonus = this.prep.route === 'laser' ? 0 : this.prep.route === 'manual' ? 3 : 10;
-    const traj = clamp(100 - this.stats.devMax * 19 - exitErr * 13 - routeBonus - this.stats.rodEvents * 2, 0, 100);
+    const manualBonus = this.crew.locator.mods.manual && this.prep.route !== 'laser' ? 5 : 0;
+    const traj = clamp(100 - this.stats.devMax * 19 - exitErr * 13 - routeBonus + manualBonus - this.stats.rodEvents * 2, 0, 100);
     const util = clamp(100 - this.stats.strikes * 48 - this.stats.fracOuts * 8, 0, 100);
     this.stats.trajectoryQuality = traj;
     this.stats.utilityQuality = util;
