@@ -476,12 +476,18 @@ class Job {
   renderPrepDeck() {
     const steps = this.prepStepData();
     const ready = this.prep.scan && this.prep.route && this.prep.mud && this.prep.reamer;
+    const missing = [
+      !this.prep.scan && { id: 'scan', short: 'коммуникации', full: 'проверку коммуникаций' },
+      !this.prep.route && { id: 'route', short: 'разметку', full: 'разметку трассы' },
+      !this.prep.mud && { id: 'mud', short: 'раствор', full: 'буровой раствор' },
+      !this.prep.reamer && { id: 'reamer', short: 'расширитель', full: 'расширитель' }
+    ].filter(Boolean);
     const cost = prepCost(this.prep);
     $('deck').innerHTML = `<div class="deck-inner">
       <div class="prep-head">
         <div><p class="eyebrow">Этап 1 · подготовка</p><h2>Подготовка объекта</h2>
           <div class="sub">${this.contract.code} · ${SOILS[this.contract.soil].name} · смета подготовки ${fmtMoney(cost)}</div></div>
-        <button class="btn btn-primary" id="btn-start-pilot" ${ready ? '' : 'disabled'}>Начать пилотное бурение →</button>
+        <button class="btn btn-primary" id="btn-start-pilot">${ready ? 'Начать пилотное бурение →' : `Выбрать ${missing[0].short} →`}</button>
       </div>
       <div class="prep-steps">
         ${steps.map((s, i) => `<button class="prep-step ${s.done ? 'done' : ''} ${s.warn ? 'warn' : ''}" data-step="${s.id}">
@@ -492,7 +498,7 @@ class Job {
           <span class="act">${s.act}</span>
         </button>`).join('')}
       </div>
-      ${ready ? '' : `<div class="prep-warn">⚠ Для выхода на трассу выберите коммуникации, разметку, раствор и расширитель.</div>`}
+      ${ready ? '' : `<div class="prep-warn">⚠ Осталось выбрать: ${missing.map(m => m.full).join(', ')}.</div>`}
     </div>`;
 
     $('deck').querySelectorAll('[data-step]').forEach(btn => {
@@ -510,8 +516,16 @@ class Job {
       });
     });
     const start = $('btn-start-pilot');
-    if (start && ready) {
-      start.addEventListener('click', () => this.startPilot());
+    if (start) {
+      start.addEventListener('click', () => {
+        sound.click();
+        if (ready) {
+          this.startPilot();
+        } else {
+          toast(`Сначала выберите ${missing[0].full}`, 'warn');
+          this.openPrepSheet(missing[0].id);
+        }
+      });
     }
   }
 
