@@ -197,7 +197,7 @@ function renderCrewMini() {
     const weak = ROLES.find(r => crew[r.id].level < 2);
     tip.textContent = weak
       ? `${weak.short}: ${crew[weak.id].name.split(' ')[0]} пока без опыта. Первые объекты лучше брать на простом грунте.`
-      : 'Сначала изучите архив коммуникаций. Неизвестная линия на трассе — самая дорогая ошибка оператора.';
+      : 'Сначала изучите архив коммуникаций. Неизвестная линия на трассе — самая дорогая ошибка машиниста.';
   }
 }
 
@@ -211,12 +211,13 @@ function renderCrew() {
       const sel = c.id === chosen.id;
       const lvl = xpLevel(chosen.xp || 0);
       const dots = Array.from({ length: 5 }, (_, i) => `<i class="${i < c.skill ? 'on' : ''}"></i>`).join('');
-      return `<button class="candidate ${sel ? 'selected' : ''}" data-role="${role.id}" data-cand="${c.id}">
+      return `<button class="candidate ${sel ? 'selected' : ''}" style="--role-color:${role.color}" data-role="${role.id}" data-cand="${c.id}">
         <div class="avatar" style="--role-color:${role.color}">${initials(c.name)}</div>
         <div class="who">
           <b>${esc(c.name)}</b>
-          <div class="meta"><span>L${lvl}</span><span class="skill">${c.skill}/5 <span class="skill-dots">${dots}</span></span></div>
-          <p>${esc(c.perkText)}</p>
+          <div class="meta"><span>L${lvl}</span>${c.age ? `<span>${c.age} лет</span>` : ''}<span class="skill">${c.skill}/5 <span class="skill-dots">${dots}</span></span></div>
+          ${c.character ? `<p class="char">${esc(c.character)}</p>` : ''}
+          <p class="perk">${esc(c.perkText)}</p>
           <div class="salary">${fmtMoney(c.salary)} / смена</div>
         </div>
       </button>`;
@@ -543,7 +544,7 @@ class Job {
     } else if (step === 'route') {
       this.openSheetData({
         kicker: 'Подготовка · трасса', title: 'Разметка проектной оси',
-        sub: 'Разметка задаёт допуск выхода и отображение проекта в пилоте. Без неё оператор идёт по приборам.',
+        sub: 'Разметка задаёт допуск выхода и отображение проекта в пилоте. Без неё машинист идёт по приборам.',
         options: [
           { id: 'laser', name: 'Лазерная разметка', price: 1200, best: true, selected: this.prep.route === 'laser', desc: 'Точный проект и допуск выхода 0,4 м. Лучший контроль траектории.' },
           { id: 'manual', name: 'Ручная разметка', price: 400, selected: this.prep.route === 'manual', desc: 'Проект нанесён, допуск выхода 1,2 м. Обычный вариант для смены.' },
@@ -918,7 +919,10 @@ class Job {
     const thrust = (this.holds.feed ? 1 : this.input.auto ? 0.55 : 0);
     const steer = (this.holds.up ? 1 : 0) - (this.holds.down ? 1 : 0);
     const op = this.crew.operator;
-    const steerFactor = (0.76 + op.effective * 0.055) * (op.mods.steer || 1);
+    const locatorAssist = op.mods.locatorAssist
+      ? 0.86 + this.crew.locator.effective * 0.045
+      : 1;
+    const steerFactor = (0.76 + op.effective * 0.055) * (op.mods.steer || 1) * locatorAssist;
     const steerEffect = this.input.rot ? 0.19 : 1;
     const pitchRate = 31 * steerFactor * steerEffect;
 

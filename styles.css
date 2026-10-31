@@ -276,6 +276,11 @@ ul { margin: 0; padding: 0; list-style: none; }
 .candidate .meta { display: flex; gap: 8px; margin-top: 3px; font-size: 9px; color: var(--dim); letter-spacing: .05em; text-transform: uppercase; }
 .candidate .meta .skill { color: var(--orange-2); font-family: var(--mono); }
 .candidate p { font-size: 10.5px; color: var(--muted); line-height: 1.45; margin-top: 7px; }
+.candidate p.char {
+  color: #9fb4c0; font-style: italic; padding-left: 8px;
+  border-left: 2px solid color-mix(in srgb, var(--role-color, var(--orange)) 55%, transparent);
+}
+.candidate p.perk { color: var(--muted); }
 .candidate .salary { margin-top: 8px; font-size: 10px; color: #b7c8d2; font-family: var(--mono); }
 .skill-dots { display: inline-flex; gap: 2px; margin-left: 2px; }
 .skill-dots i { width: 4px; height: 8px; border-radius: 1px; background: rgba(255,255,255,.13); }
