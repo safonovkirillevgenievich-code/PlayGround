@@ -102,6 +102,7 @@ export class Renderer {
     this.drawFx(ctx, view, game, time);
     this.drawUtilityLabels(ctx, view, game);
     ctx.restore();
+    this.drawTrajectoryPanel(ctx, view, game, time);
   }
 
   X(x) { return (x - this.v.x0) * this.v.sx; }
@@ -1471,6 +1472,134 @@ export class Renderer {
       }
       ctx.restore();
     }
+  }
+
+  drawTrajectoryPanel(ctx, v, game, t) {
+    const ctx2 = ctx;
+    const narrow = this.w < 480;
+    const margin = narrow ? 8 : 12;
+    const panelW = Math.min(narrow ? 172 : 244, this.w - margin * 2);
+    const panelH = narrow ? 112 : 138;
+    if (panelW < 128 || this.h < panelH + margin * 2) return;
+
+    const x = this.w - panelW - margin;
+    const y = margin;
+    const c = game.contract;
+    const design = game.design || c.design || [];
+    const path = game.path || [];
+    const head = game.head || path[path.length - 1] || { x: 0, d: c.entryDepth || 0, pitch: 0 };
+    const maxD = Math.max(1, c.maxDepth || 1);
+    const pad = narrow ? 9 : 11;
+    const plotX = x + pad;
+    const plotY = y + (narrow ? 31 : 35);
+    const plotW = panelW - pad * 2;
+    const plotH = narrow ? 42 : 58;
+    const mapX = value => plotX + clamp(value / Math.max(1, c.length), 0, 1) * plotW;
+    const mapY = value => plotY + clamp(value / maxD, 0, 1) * plotH;
+
+    ctx2.save();
+    ctx2.shadowColor = 'rgba(0,0,0,.4)';
+    ctx2.shadowBlur = 14;
+    ctx2.shadowOffsetY = 4;
+    this.rr(ctx2, x, y, panelW, panelH, 10);
+    ctx2.fillStyle = 'rgba(7,16,23,.92)';
+    ctx2.fill();
+    ctx2.shadowColor = 'transparent';
+    ctx2.shadowBlur = 0;
+    ctx2.shadowOffsetY = 0;
+    ctx2.strokeStyle = 'rgba(139,181,199,.3)';
+    ctx2.lineWidth = 1;
+    ctx2.stroke();
+
+    ctx2.fillStyle = '#9db9c5';
+    ctx2.font = `700 ${narrow ? 7 : 8}px system-ui`;
+    ctx2.textAlign = 'left';
+    ctx2.fillText('ПРОФИЛЬ БУРЕНИЯ', x + pad, y + 13);
+    ctx2.fillStyle = 'rgba(94,214,255,.82)';
+    ctx2.textAlign = 'right';
+    ctx2.fillText('LOCATOR', x + panelW - pad, y + 13);
+
+    // Compact depth/distance grid for the full bore, independent of the main camera.
+    ctx2.fillStyle = 'rgba(27,48,59,.55)';
+    ctx2.fillRect(plotX, plotY, plotW, plotH);
+    ctx2.strokeStyle = 'rgba(170,205,220,.13)';
+    ctx2.lineWidth = 1;
+    ctx2.setLineDash([2, 4]);
+    for (let i = 1; i <= 3; i++) {
+      const gx = plotX + plotW * i / 4;
+      ctx2.beginPath(); ctx2.moveTo(gx, plotY); ctx2.lineTo(gx, plotY + plotH); ctx2.stroke();
+    }
+    for (let i = 1; i <= 2; i++) {
+      const gy = plotY + plotH * i / 3;
+      ctx2.beginPath(); ctx2.moveTo(plotX, gy); ctx2.lineTo(plotX + plotW, gy); ctx2.stroke();
+    }
+    ctx2.setLineDash([]);
+
+    const drawRoute = (points, color, width, dash) => {
+      if (!points || points.length < 2) return;
+      ctx2.save();
+      ctx2.beginPath();
+      points.forEach((point, i) => {
+        const px = mapX(point.x), py = mapY(point.d);
+        i ? ctx2.lineTo(px, py) : ctx2.moveTo(px, py);
+      });
+      ctx2.strokeStyle = color;
+      ctx2.lineWidth = width;
+      ctx2.lineJoin = 'round';
+      ctx2.lineCap = 'round';
+      if (dash) ctx2.setLineDash(dash);
+      ctx2.stroke();
+      ctx2.restore();
+    };
+
+    ctx2.save();
+    ctx2.beginPath(); ctx2.rect(plotX, plotY, plotW, plotH); ctx2.clip();
+    drawRoute(design, 'rgba(94,214,255,.62)', 1.4, [3, 3]);
+    if (path.length > 1) drawRoute(path, '#ff9a3d', 2.4, null);
+
+    // Highlight meaningful route bends so the trajectory remains legible at a glance.
+    const route = path.length > 1 ? path : design;
+    for (let i = 1; i < route.length - 1; i++) {
+      const a = route[i - 1], b = route[i], d = route[i + 1];
+      const turn = Math.abs(Math.atan2(d.d - b.d, d.x - b.x) - Math.atan2(b.d - a.d, b.x - a.x));
+      if (turn < 0.12) continue;
+      const px = mapX(b.x), py = mapY(b.d);
+      ctx2.fillStyle = path.length > 1 ? '#ffc27a' : '#9be8ff';
+      ctx2.beginPath(); ctx2.arc(px, py, narrow ? 1.7 : 2.1, 0, TAU); ctx2.fill();
+    }
+
+    const hx = mapX(head.x), hy = mapY(head.d);
+    const pulse = 0.5 + Math.sin(t * 4) * 0.5;
+    ctx2.strokeStyle = `rgba(94,214,255,${0.38 + pulse * 0.42})`;
+    ctx2.lineWidth = 1.2;
+    ctx2.beginPath(); ctx2.arc(hx, hy, (narrow ? 4 : 5) + pulse * 2, 0, TAU); ctx2.stroke();
+    ctx2.fillStyle = '#e9fbff';
+    ctx2.beginPath(); ctx2.arc(hx, hy, narrow ? 2 : 2.5, 0, TAU); ctx2.fill();
+    ctx2.restore();
+
+    ctx2.fillStyle = 'rgba(183,207,218,.56)';
+    ctx2.font = `${narrow ? 6.5 : 7}px "JetBrains Mono", monospace`;
+    ctx2.textAlign = 'left';
+    ctx2.fillText('0м', plotX, plotY + plotH + 8);
+    ctx2.textAlign = 'right';
+    ctx2.fillText(`${c.length}м`, plotX + plotW, plotY + plotH + 8);
+
+    const readY = y + panelH - (narrow ? 18 : 20);
+    const posText = `X ${fmtDepth(head.x)}м`;
+    const depthText = `ГЛУБ. ${fmtDepth(head.d)}м`;
+    const pitch = Number.isFinite(head.pitch) ? Math.round(head.pitch) : 0;
+    const pitchText = `${pitch > 0 ? '+' : ''}${pitch}°`;
+    ctx2.font = `700 ${narrow ? 7 : 8}px "JetBrains Mono", monospace`;
+    ctx2.textAlign = 'left';
+    ctx2.fillStyle = '#f1b06d';
+    ctx2.fillText(posText, x + pad, readY);
+    ctx2.fillStyle = '#d7e5eb';
+    ctx2.textAlign = 'center';
+    ctx2.fillText(depthText, x + panelW * 0.55, readY);
+    ctx2.fillStyle = '#78dcf5';
+    ctx2.textAlign = 'right';
+    ctx2.fillText(`НАКЛ. ${pitchText}`, x + panelW - pad, readY);
+    ctx2.restore();
   }
 
   drawUtilityLabels(ctx, v, game) {

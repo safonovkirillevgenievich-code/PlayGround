@@ -1,7 +1,7 @@
 /* Avto-M Driller HDD 2.0 — application, stages and UI */
 
 import {
-  CONTRACTS, ROLES, CANDIDATES, MIXES, SOILS, UTILITY_TYPES,
+  CONTRACTS, ROLES, CANDIDATES, MIXES, MUD_RECIPES, SOILS, UTILITY_TYPES, SWIVELS,
   DIFFICULTY, DIFFICULTY_COLOR, prepareContract, designDepthAt
 } from './data.js';
 import {
@@ -20,7 +20,8 @@ const STAGES = [
   { id: 'pilot', label: 'Пилот' },
   { id: 'mud', label: 'Раствор' },
   { id: 'ream', label: 'Расширение' },
-  { id: 'pull', label: 'Протяжка' }
+  { id: 'pull', label: 'Протяжка' },
+  { id: 'maintenance', label: 'Обслуживание' }
 ];
 const START_MONEY = 85000;
 
@@ -296,7 +297,10 @@ class Job {
   constructor(contract, crew) {
     this.contract = contract;
     this.crew = crew;
-    this.prep = { scan: null, route: null, mud: null, reamer: null, safety: false };
+    this.prep = { scan: null, route: null, mud: null, recipe: null, reamer: null, swivel: null, safety: false };
+    this.swivel = null;
+    this.mudStockKg = 0;
+    this.maintenance = null;
     this.stage = 'prep';
     this.clock = 0;
     this.simT = 0;
@@ -346,7 +350,8 @@ class Job {
   activeRoles() {
     return {
       prep: ['foreman', 'locator'], pilot: ['operator', 'locator'], mud: ['mud', 'foreman'],
-      ream: ['operator', 'mechanic'], pull: ['operator', 'foreman'], results: []
+      ream: ['operator', 'mechanic'], pull: ['operator', 'foreman'],
+      maintenance: ['mechanic', 'foreman'], results: []
     }[this.stage] || [];
   }
 
@@ -437,6 +442,7 @@ class Job {
       case 'mud': this.updateMud(dt); break;
       case 'ream': this.updateReam(dt); break;
       case 'pull': this.updatePull(dt); break;
+      case 'maintenance': this.updateMaintenance(dt); break;
     }
     this.updateHud();
   }
@@ -448,12 +454,15 @@ class Job {
     if (this.stage === 'mud') { this.renderMudDeck(); return; }
     if (this.stage === 'ream') { this.renderReamDeck(); return; }
     if (this.stage === 'pull') { this.renderPullDeck(); return; }
+    if (this.stage === 'maintenance') { this.renderMaintenanceDeck(); return; }
     deck.innerHTML = `<div class="deck-inner"><div class="prep-head"><div><p class="eyebrow">Смена завершена</p><h2>Объект передан заказчику</h2></div></div></div>`;
   }
 
   prepStepData() {
     const p = this.prep;
-    const mix = p.mud ? MIXES[p.mud] : null;
+    const recipe = p.recipe ? MUD_RECIPES[p.recipe] : null;
+    const mix = recipe ? MIXES[recipe.mix] : (p.mud ? MIXES[p.mud] : null);
+    const swivel = SWIVELS.find(s => s.id === p.swivel);
     return [
       { id: 'scan', icon: '◎', title: 'Коммуникации', done: !!p.scan, warn: p.scan === 'skip',
         value: !p.scan ? 'Не проверено' : p.scan === 'georadar' ? 'Георадар · все сети' : p.scan === 'docs' ? 'Архив · неполно' : 'Пропущено · риск',
@@ -461,12 +470,15 @@ class Job {
       { id: 'route', icon: '⌁', title: 'Разметка трассы', done: !!p.route, warn: p.route === 'skip',
         value: !p.route ? 'Проект не нанесён' : p.route === 'laser' ? 'Лазер · допуск 0,4 м' : p.route === 'manual' ? 'Ручная · допуск 1,2 м' : 'Без разметки',
         act: p.route ? 'ИЗМЕНИТЬ' : 'РАЗМЕТИТЬ' },
-      { id: 'mud', icon: '◈', title: 'Буровой раствор', done: !!p.mud, warn: p.mud === 'water',
-        value: mix ? `${mix.name} · окно +${mix.window}` : 'Не выбран',
-        act: p.mud ? 'ИЗМЕНИТЬ' : 'ВЫБРАТЬ' },
+      { id: 'mud', icon: '◈', title: 'Буровой раствор', done: !!p.recipe, warn: p.mud === 'water',
+        value: recipe ? `${mix.name} · запас ${recipe.bentoniteAllowanceKgPer100m} кг/100 м` : 'Рецепт не выбран',
+        act: p.recipe ? 'ИЗМЕНИТЬ' : 'ВЫБРАТЬ' },
       { id: 'reamer', icon: '⌀', title: 'Расширитель', done: !!p.reamer, warn: false,
         value: p.reamer ? `${p.reamer.dia} мм · ${p.reamer.ratio.toFixed(2)}×` : 'Не подобран',
         act: p.reamer ? 'ИЗМЕНИТЬ' : 'ПОДОБРАТЬ' },
+      { id: 'swivel', icon: '⟳', title: 'Вертлюг', done: !!swivel, warn: false,
+        value: swivel ? `${swivel.name} · предел ${swivel.capacity}` : 'Не выбран',
+        act: swivel ? 'ИЗМЕНИТЬ' : 'ВЫБРАТЬ' },
       { id: 'safety', icon: '⛨', title: 'Ограждение зоны', done: !!p.safety, warn: false,
         value: p.safety ? 'Зона ограждена' : 'Не ограждена',
         act: p.safety ? 'СНЯТЬ' : 'ОГРАДИТЬ' }
@@ -475,12 +487,13 @@ class Job {
 
   renderPrepDeck() {
     const steps = this.prepStepData();
-    const ready = this.prep.scan && this.prep.route && this.prep.mud && this.prep.reamer;
+    const ready = this.prep.scan && this.prep.route && this.prep.recipe && this.prep.reamer && this.prep.swivel;
     const missing = [
       !this.prep.scan && { id: 'scan', short: 'коммуникации', full: 'проверку коммуникаций' },
       !this.prep.route && { id: 'route', short: 'разметку', full: 'разметку трассы' },
-      !this.prep.mud && { id: 'mud', short: 'раствор', full: 'буровой раствор' },
-      !this.prep.reamer && { id: 'reamer', short: 'расширитель', full: 'расширитель' }
+      !this.prep.recipe && { id: 'mud', short: 'рецепт раствора', full: 'рецепт раствора' },
+      !this.prep.reamer && { id: 'reamer', short: 'расширитель', full: 'расширитель' },
+      !this.prep.swivel && { id: 'swivel', short: 'вертлюг', full: 'вертлюг' }
     ].filter(Boolean);
     const cost = prepCost(this.prep);
     $('deck').innerHTML = `<div class="deck-inner">
@@ -573,15 +586,20 @@ class Job {
     } else if (step === 'mud') {
       this.openSheetData({
         kicker: 'Подготовка · раствор', title: 'Рецептура бурового раствора',
-        sub: 'Раствор выносит шлам и держит стенку. Слишком слабый состав даёт узкое окно давления.',
-        options: Object.values(MIXES).map(m => ({
-          id: m.id, name: m.name, price: m.cost, selected: this.prep.mud === m.id,
-          best: m.id === 'polymer' && (c.soil === 'gravel' || c.soil === 'rock'),
-          desc: `${m.note} Окно давления ${m.window > 0 ? '+' : ''}${m.window}, вынос шлама ×${m.clean}.`
-        })),
+        sub: 'Выберите рецепт под грунт объекта. Запас бентонита конечный и расходуется при расширении и протяжке.',
+        options: Object.entries(MUD_RECIPES).map(([id, recipe]) => {
+          const mix = MIXES[recipe.mix];
+          return {
+            id, name: `${SOILS[recipe.soil].short} · ${mix.name}`, price: mix.cost,
+            selected: this.prep.recipe === id, best: recipe.soil === c.soil,
+            desc: `${recipe.hint} Запас ${recipe.bentoniteAllowanceKgPer100m} кг/100 м; расход ${recipe.bentoniteUseKgPer100m} кг/100 м.`
+          };
+        }),
         onPick: (opt) => {
-          this.prep.mud = opt.id;
-          this.addLog('mud', `Замешиваю ${MIXES[opt.id].name.toLowerCase()}. Контроль давления — по манометру.`, '');
+          const recipe = MUD_RECIPES[opt.id];
+          this.prep.recipe = opt.id;
+          this.prep.mud = recipe.mix;
+          this.addLog('mud', `Замешиваю ${MIXES[recipe.mix].name.toLowerCase()} по рецепту для ${SOILS[recipe.soil].short.toLowerCase()}.`, '');
           this.renderPrepDeck();
         }
       });
@@ -601,6 +619,22 @@ class Job {
           this.renderPrepDeck();
         }
       });
+    } else if (step === 'swivel') {
+      this.openSheetData({
+        kicker: 'Подготовка · протяжка', title: 'Выбор вертлюга',
+        sub: 'Грузоподъёмность задаёт допустимое усилие. Усиленный подшипник снижает сопротивление и износ при протяжке.',
+        options: SWIVELS.map(swivel => ({
+          id: swivel.id, name: swivel.name, price: swivel.cost,
+          selected: this.prep.swivel === swivel.id,
+          best: swivel.id === 'heavy' && c.soil === 'rock' || swivel.id === 'standard' && c.soil !== 'rock',
+          desc: `${swivel.hint} Допустимая нагрузка ${swivel.capacity}; коэффициент подшипника ×${swivel.bearing}.`
+        })),
+        onPick: (opt) => {
+          this.prep.swivel = opt.id;
+          this.addLog('mechanic', `Устанавливаю ${SWIVELS.find(s => s.id === opt.id).name.toLowerCase()}. Проверяю подшипник и фиксацию.`, '');
+          this.renderPrepDeck();
+        }
+      });
     }
   }
 
@@ -610,7 +644,7 @@ class Job {
 
   startPilot() {
     const p = this.prep;
-    if (!p.scan || !p.route || !p.mud || !p.reamer) return;
+    if (!p.scan || !p.route || !p.recipe || !p.reamer || !p.swivel) return;
     const cost = prepCost(p);
     if (state.money < cost) {
       toast('Недостаточно средств на подготовку объекта', 'bad');
@@ -621,6 +655,16 @@ class Job {
     saveState();
     updateMoneyUI();
     this.reamer = p.reamer;
+    this.swivel = SWIVELS.find(s => s.id === p.swivel);
+    const recipe = MUD_RECIPES[p.recipe];
+    this.recipe = recipe;
+    this.mudStockKg = recipe.bentoniteAllowanceKgPer100m * this.contract.length / 100;
+    this.mudConsumedKg = 0;
+    this.reamerWear = 0;
+    this.swivelWear = 0;
+    this.hydraulicFaults = 0;
+    this.hydraulicDamage = 0;
+    this.mudEmptyLogged = false;
     this.utilities.forEach(u => { u.hit = false; });
     this.head = { x: 0, d: this.design[0].d, pitch: 0 };
     this.path = [{ x: 0, d: this.head.d }];
@@ -832,27 +876,38 @@ class Job {
     this.setWarnings(warnings);
   }
 
+  swivelCapacity() {
+    const base = this.swivel?.capacity || 92;
+    return Math.max(50, base * (1 - (this.swivelWear || 0) * 0.0012));
+  }
+
+  reamLoadLimit() {
+    // During reaming the swivel is part of the selected rig load envelope, with a small allowance for rotary shock.
+    return this.swivelCapacity() + 8;
+  }
+
   updateProcessHud() {
     const sd = this.stageData;
     const isPull = this.stage === 'pull';
     const val = isPull ? sd.force : sd.load;
-    this.setText(this.hudRefs.load, `${Math.round(val)}/100`);
+    const limit = isPull ? this.swivelCapacity() : this.reamLoadLimit();
+    this.setText(this.hudRefs.load, `${Math.round(val)}/${limit}`);
     this.setText(this.hudRefs.progress, `${Math.round(sd.progress)}%`);
     this.setText(this.hudRefs.quality, `${Math.round(sd.quality)}%`);
     const bw = this.barRefs;
     if (bw.aFill) {
-      bw.aFill.style.width = `${clamp(val, 0, 120) / 1.2}%`;
-      bw.aFill.style.background = val > 100 ? 'var(--red)' : val > 88 ? 'var(--yellow)' : 'var(--green)';
+      bw.aFill.style.width = `${clamp(val / limit * 100, 0, 120) / 1.2}%`;
+      bw.aFill.style.background = val > limit ? 'var(--red)' : val > limit * 0.88 ? 'var(--yellow)' : 'var(--green)';
       bw.aSafe.style.left = '66%';
       bw.aSafe.style.width = '17%';
-      this.setText(bw.aValue, `${Math.round(val)} / 100`);
+      this.setText(bw.aValue, `${Math.round(val)} / ${limit}`);
       this.setText(bw.bValue, `${Math.round(sd.progress)}%`);
       bw.bFill.style.width = `${clamp(sd.progress, 0, 100)}%`;
     }
     const warnings = [];
-    if (val > 100) warnings.push({ text: isPull ? 'Усилие выше предела — риск повреждения трубы' : 'Перегрузка расширителя — остановите тягу', danger: true });
-    else if (val > 90) warnings.push({ text: 'Нагрузка близка к пределу' });
-    if (!sd.mud) warnings.push({ text: 'Промывка выключена — нагрузка растёт' });
+    if (val > limit) warnings.push({ text: isPull ? 'Усилие выше грузоподъёмности вертлюга — риск отказа гидравлики' : 'Перегрузка расширителя — остановите тягу', danger: true });
+    else if (val > limit * 0.88) warnings.push({ text: 'Нагрузка близка к пределу' });
+    if (!sd.mud || this.mudStockKg <= 0) warnings.push({ text: this.mudStockKg <= 0 ? 'Бентонит исчерпан — нагрузка растёт' : 'Промывка выключена — нагрузка растёт' });
     this.setWarnings(warnings);
   }
 
@@ -1284,7 +1339,8 @@ class Job {
         <div class="hint">Расширитель идёт от выходного котлована к установке. Нагрузка растёт с диаметром и плотностью грунта.</div>
       </div>
       <div class="process-card">
-        <div class="ctrl-label"><span>Тяга</span><b id="proc-load-label">${Math.round(sd.load)} / 100</b></div>
+        <div class="ctrl-label"><span>Тяга · предел установки</span><b id="proc-load-label">${Math.round(sd.load)} / ${Math.round(this.reamLoadLimit())}</b></div>
+        <div class="quality-line"><span>Бентонит</span><b id="proc-mud-stock">${Math.ceil(this.mudStockKg)} кг</b></div>
         <button class="hold-btn big" id="process-pull">ТЯГА<small>удерживать</small></button>
         <div class="split" style="margin-top:7px">
           <button class="toggle-btn green on" id="proc-mud">ПРОМЫВКА ВКЛ</button>
@@ -1295,7 +1351,7 @@ class Job {
         <div class="ctrl-label"><span>Состояние</span><b id="proc-quality">100%</b></div>
         <div class="process-meter"><i id="proc-quality-fill" style="width:100%;background:linear-gradient(90deg,#ff7a1a,#7dd3a7)"></i></div>
         <div class="quality-line"><span>Перегрузки</span><b id="proc-events">0</b></div>
-        <div class="hint">Красная зона — выше 100. Отпускайте тягу, чтобы нагрузка успела упасть. Промывка снижает трение.</div>
+        <div class="hint">Красная зона — выше предела выбранного вертлюга. Отпускайте тягу, чтобы нагрузка успела упасть. Промывка снижает трение.</div>
       </div>
     </div>`;
     this.bindProcessControls();
@@ -1312,7 +1368,8 @@ class Job {
         <div class="hint">Вертлюг закреплён, труба заведена в скважину. Тянуть нужно импульсами, чтобы не превысить предел.</div>
       </div>
       <div class="process-card">
-        <div class="ctrl-label"><span>Протяжка</span><b id="proc-load-label">${Math.round(sd.force)} / 100</b></div>
+        <div class="ctrl-label"><span>Протяжка · предел вертлюга</span><b id="proc-load-label">${Math.round(sd.force)} / ${this.swivel?.capacity || 92}</b></div>
+        <div class="quality-line"><span>Бентонит</span><b id="proc-mud-stock">${Math.ceil(this.mudStockKg)} кг</b></div>
         <button class="hold-btn big" id="process-pull">ПРОТЯЖКА<small>удерживать</small></button>
         <div class="split" style="margin-top:7px">
           <button class="toggle-btn green on" id="proc-mud">ПРОМЫВКА ВКЛ</button>
@@ -1347,8 +1404,25 @@ class Job {
     this.procRefs = {
       load: $('proc-load-label'), quality: $('proc-quality'),
       qualityFill: $('proc-quality-fill'), events: $('proc-events'),
-      progress: $('proc-progress'), mud
+      progress: $('proc-progress'), stock: $('proc-mud-stock'), mud
     };
+  }
+
+  consumeProcessMud(before, after, stageShare, dt, sd) {
+    if (!sd.mud || after <= before) return;
+    const totalNeed = (this.recipe?.bentoniteUseKgPer100m || 30) * this.contract.length / 100;
+    const requested = totalNeed * stageShare * (after - before) / 100;
+    const used = Math.min(this.mudStockKg, requested);
+    this.mudStockKg = Math.max(0, this.mudStockKg - used);
+    this.mudConsumedKg += used;
+    if (this.mudStockKg <= 0) {
+      sd.quality = clamp(sd.quality - dt * 1.8, 0, 100);
+      if (!this.mudEmptyLogged) {
+        this.mudEmptyLogged = true;
+        this.addLog('mud', 'Запас бентонита исчерпан. Промывка ослабла — завершайте проходку без задержек.', 'danger');
+        toast('БЕНТОНИТ ЗАКОНЧИЛСЯ · нагрузка растёт', 'bad');
+      }
+    }
   }
 
   updateReam(dt) {
@@ -1356,13 +1430,18 @@ class Job {
     const pulling = this.holds.feed;
     sd.time += dt;
     const wobble = Math.sin(this.simT * 1.4) * 2.8 + Math.sin(this.simT * 3.7 + 1) * 1.4;
-    const target = this.reamBase + (pulling ? 20 : 0) - (sd.mud ? 14 : 0) + (sd.progress / 100) * 8 + wobble;
+    const mudEmpty = this.mudStockKg <= 0;
+    const reamLimit = this.reamLoadLimit();
+    const target = this.reamBase + (pulling ? 20 : 0) - (sd.mud && !mudEmpty ? 14 : 0) + (mudEmpty ? 9 : 0) + (sd.progress / 100) * 8 + (this.reamerWear || 0) * 0.08 + wobble;
     sd.load = lerp(sd.load, target, 1 - Math.exp(-dt * 3.1));
     if (pulling) {
-      const penalty = clamp((sd.load - 100) / 55, 0, 0.7);
+      const penalty = clamp((sd.load - reamLimit) / 55, 0, 0.7);
+      const before = sd.progress;
       sd.progress += dt * 4.0 * (1 - penalty);
+      this.consumeProcessMud(before, sd.progress, 0.55, dt, sd);
+      this.reamerWear = clamp(this.reamerWear + Math.max(0, sd.load - 55) * dt * 0.012, 0, 100);
     }
-    if (sd.load > 100) {
+    if (sd.load > reamLimit) {
       sd.damage += dt;
       sd.quality = clamp(sd.quality - dt * 3.1, 0, 100);
       if (sd.damage > 1.35) this.processOverload('ream');
@@ -1405,13 +1484,19 @@ class Job {
     const pulling = this.holds.feed;
     sd.time += dt;
     const wobble = Math.sin(this.simT * 1.2 + 2) * 2.2 + Math.sin(this.simT * 3.1) * 1.1;
-    const target = this.pullBase + (pulling ? 18 : 0) - (sd.mud ? 16 : 0) + (sd.progress / 100) * 16 + wobble;
+    const mudEmpty = this.mudStockKg <= 0;
+    const target = this.pullBase + (pulling ? 18 : 0) - (sd.mud && !mudEmpty ? 16 : 0) + (mudEmpty ? 10 : 0) + (sd.progress / 100) * 16 + wobble;
     sd.force = lerp(sd.force, target, 1 - Math.exp(-dt * 2.7));
+    const swivelLimit = this.swivelCapacity();
     if (pulling) {
-      const penalty = clamp((sd.force - 100) / 55, 0, 0.7);
+      const penalty = clamp((sd.force - swivelLimit) / 55, 0, 0.7);
+      const before = sd.progress;
       sd.progress += dt * 3.55 * (1 - penalty);
+      this.consumeProcessMud(before, sd.progress, 0.45, dt, sd);
+      const bearingStress = Math.max(0, sd.force / swivelLimit - 0.55) * (this.swivel?.bearing || 1);
+      this.swivelWear = clamp(this.swivelWear + bearingStress * dt * 4, 0, 100);
     }
-    if (sd.force > 100) {
+    if (sd.force > swivelLimit) {
       sd.damage += dt;
       sd.quality = clamp(sd.quality - dt * 3.4, 0, 100);
       if (sd.damage > 1.35) this.processOverload('pull');
@@ -1431,8 +1516,11 @@ class Job {
     const sd = this.stageData;
     const r = this.procRefs;
     if (!r) return;
-    const val = this.stage === 'pull' ? sd.force : sd.load;
-    this.setText(r.load, `${Math.round(val)} / 100`);
+    const isPull = this.stage === 'pull';
+    const val = isPull ? sd.force : sd.load;
+    const limit = isPull ? this.swivelCapacity() : this.reamLoadLimit();
+    this.setText(r.load, `${Math.round(val)} / ${Math.round(limit)}`);
+    this.setText(r.stock, `${Math.ceil(this.mudStockKg)} кг`);
     this.setText(r.quality, `${Math.round(sd.quality)}%`);
     r.qualityFill.style.width = `${clamp(sd.quality, 0, 100)}%`;
     this.setText(r.events, String(sd.events));
@@ -1443,6 +1531,8 @@ class Job {
     const sd = this.stageData;
     sd.events++;
     sd.damage = 0;
+    this.hydraulicFaults = (this.hydraulicFaults || 0) + 1;
+    this.hydraulicDamage = clamp((this.hydraulicDamage || 0) + 24, 0, 100);
     sd.quality = clamp(sd.quality - 13, 0, 100);
     sd.progress = Math.max(0, sd.progress - 3);
     this.extra += kind === 'pull' ? 5000 : 4500;
@@ -1450,17 +1540,18 @@ class Job {
     this.fx.shake = 0.9;
     this.drillPause = 1.4;
     if (kind === 'ream') {
-      this.addLog('operator', 'Перегрузка расширителя! Сбрасываю тягу, промываю скважину.', 'danger');
-      toast(`ПЕРЕГРУЗКА РАСШИРИТЕЛЯ · −${fmtMoney(4500)}`, 'bad');
+      this.addLog('operator', `Перегрузка расширителя! Гидросистема получила удар (${this.hydraulicFaults}/2). Сбрасываю тягу, промываю скважину.`, 'danger');
+      toast(`ПЕРЕГРУЗКА · гидросистема ${this.hydraulicFaults}/2 · −${fmtMoney(4500)}`, 'bad');
     } else {
-      this.addLog('operator', 'Усилие выше предела! Стоп протяжки, риск повреждения трубы.', 'danger');
-      toast(`ПЕРЕГРУЗ ТРУБЫ · −${fmtMoney(5000)}`, 'bad');
+      this.addLog('operator', `Вертлюг перегружен! Гидравлический удар ${this.hydraulicFaults}/2 — стоп протяжки.`, 'danger');
+      toast(`ПЕРЕГРУЗ ВЕРТЛЮГА · гидросистема ${this.hydraulicFaults}/2 · −${fmtMoney(5000)}`, 'bad');
     }
     sound.alarm();
-    if (sd.events >= 2) {
-      this.finishJob(false, kind === 'pull'
-        ? 'Труба повреждена перегрузкой. Протяжка остановлена.'
-        : 'Расширитель заклинило. Скважина требует повторной проходки.');
+    if (sd.events >= 2 || this.hydraulicFaults >= 2) {
+      this.finishJob(false, this.hydraulicFaults >= 2
+        ? 'Повторные перегрузки вывели гидравлическую систему из строя. Работы остановлены.'
+        : kind === 'pull' ? 'Труба повреждена перегрузкой. Протяжка остановлена.'
+          : 'Расширитель заклинило. Скважина требует повторной проходки.');
     }
   }
 
@@ -1468,8 +1559,68 @@ class Job {
     this.stats.pullQuality = clamp(this.stageData.quality, 0, 100);
     this.stats.pullEvents = this.stageData.events;
     this.addLog('operator', 'Труба вышла на входном котловане. Протяжка завершена.', 'good');
-    this.addLog('foreman', 'Осматриваем коммуникацию, проверяем глубину и сдаём объект.', '');
-    this.finishJob(true);
+    this.addLog('foreman', 'Перед сдачей очистим инструмент и обслужим вертлюг.', '');
+    this.maintenance = { done: [], complete: false };
+    this.setStage('maintenance');
+    toast('Протяжка завершена · обслуживание инструмента', 'good');
+    sound.ok();
+  }
+
+  maintenanceTasks() {
+    const mechanic = this.crew.mechanic;
+    const skill = mechanic.skill || 1;
+    const costFactor = clamp(1.2 - skill * 0.06, 0.78, 1.2) * (mechanic.mods.repairCost || 1);
+    const efficiency = 0.75 + skill * 0.08;
+    return [
+      { id: 'clean', title: 'Очистить расширитель', detail: 'Смыть грунт и шлам с инструмента', cost: 320,
+        apply: () => { this.reamerWear = clamp(this.reamerWear - 32 * efficiency, 0, 100); } },
+      { id: 'lubricate', title: 'Смазать привод', detail: 'Снизить износ и остаточный нагрев', cost: 460,
+        apply: () => { this.swivelWear = clamp(this.swivelWear - 28 * efficiency, 0, 100); this.hydraulicDamage = clamp(this.hydraulicDamage - 8 * efficiency, 0, 100); } },
+      { id: 'bearing', title: 'Заменить подшипник вертлюга', detail: 'Восстановить ресурс выбранного вертлюга', cost: 1850,
+        apply: () => { this.swivelWear = 0; this.hydraulicDamage = clamp(this.hydraulicDamage - 35 * efficiency, 0, 100); } },
+      { id: 'teeth', title: 'Наплавить зубья', detail: 'Восстановить режущую кромку расширителя', cost: 760,
+        apply: () => { this.reamerWear = clamp(this.reamerWear - 48 * efficiency, 0, 100); } }
+    ].map(task => ({ ...task, price: Math.round(task.cost * costFactor) }));
+  }
+
+  renderMaintenanceDeck() {
+    const mechanic = this.crew.mechanic;
+    const maintenance = this.maintenance || (this.maintenance = { done: [], complete: false });
+    const tasks = this.maintenanceTasks();
+    const doneCount = tasks.filter(task => maintenance.done.includes(task.id)).length;
+    $('deck').innerHTML = `<div class="deck-inner">
+      <div class="prep-head"><div><p class="eyebrow">Финишный регламент · механик ${esc(mechanic.name)}</p><h2>Обслуживание после протяжки</h2><p class="hint">Навык ${mechanic.skill}/5 влияет на стоимость и качество обслуживания. Все четыре операции обязательны перед сдачей.</p></div><div class="prep-progress"><b>${doneCount}/${tasks.length}</b><span>операций</span></div></div>
+      <div class="maintenance-grid">${tasks.map(task => {
+        const done = maintenance.done.includes(task.id);
+        return `<article class="process-card maintenance-card"><div class="ctrl-label"><span>${done ? '✓ Выполнено' : 'Регламент'}</span><b>${done ? 'ГОТОВО' : fmtMoney(task.price)}</b></div><h3>${task.title}</h3><p class="hint">${task.detail}</p><button class="btn ${done ? 'btn-ghost' : 'btn-primary'} btn-sm" data-maintenance="${task.id}" ${done ? 'disabled' : ''}>${done ? 'Выполнено' : 'Выполнить'}</button></article>`;
+      }).join('')}</div>
+      <div class="maintenance-footer"><span class="hint">Расходы обслуживания добавляются к смете объекта.</span><button class="btn btn-primary btn-sm" id="maintenance-finish" ${doneCount < tasks.length ? 'disabled' : ''}>${doneCount < tasks.length ? 'Завершите все операции' : 'Сдать объект →'}</button></div>
+    </div>`;
+    $('deck').querySelectorAll('[data-maintenance]').forEach(button => button.addEventListener('click', () => this.performMaintenance(button.dataset.maintenance)));
+    $('maintenance-finish').addEventListener('click', () => {
+      if (doneCount !== tasks.length) return;
+      this.addLog('mechanic', `Обслуживание завершено. Расширитель: износ ${Math.round(this.reamerWear || 0)}%, вертлюг: ${Math.round(this.swivelWear || 0)}%.`, 'good');
+      this.addLog('foreman', 'Объект готов к сдаче заказчику.', 'good');
+      this.finishJob(true);
+    });
+  }
+
+  performMaintenance(taskId) {
+    const maintenance = this.maintenance;
+    if (!maintenance || maintenance.done.includes(taskId)) return;
+    const task = this.maintenanceTasks().find(item => item.id === taskId);
+    if (!task) return;
+    task.apply();
+    maintenance.done.push(task.id);
+    this.extra += task.price;
+    this.addLog('mechanic', `${task.title}: выполнено (${fmtMoney(task.price)}).`, 'good');
+    this.setStage('maintenance');
+    toast(`${task.title} · −${fmtMoney(task.price)}`, 'good');
+    sound.click();
+  }
+
+  updateMaintenance() {
+    // Maintenance is an explicit checklist; actions are completed from its deck.
   }
 
   finishJob(success, reason = '') {

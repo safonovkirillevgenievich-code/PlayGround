@@ -1,6 +1,6 @@
 /* Small shared helpers and crew math */
 
-import { CANDIDATES, ROLES, MIXES } from './data.js';
+import { CANDIDATES, ROLES, MIXES, MUD_RECIPES } from './data.js';
 
 export const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 export const lerp = (a, b, t) => a + (b - a) * t;
@@ -67,8 +67,10 @@ export function prepCost(prep) {
   if (prep.scan === 'docs') sum += 600;
   if (prep.route === 'laser') sum += 1200;
   if (prep.route === 'manual') sum += 400;
-  if (prep.mud) sum += MIXES[prep.mud]?.cost || 0;
+  if (prep.recipe) sum += MIXES[MUD_RECIPES[prep.recipe]?.mix]?.cost || 0;
+  else if (prep.mud) sum += MIXES[prep.mud]?.cost || 0;
   if (prep.reamer) sum += prep.reamer.cost || 0;
+  if (prep.swivel) sum += prep.swivel.cost || 0;
   if (prep.safety) sum += 900;
   return sum;
 }

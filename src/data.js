@@ -51,7 +51,19 @@ export const CANDIDATES = {
       mods: { save: 0.8 } },
     { id: 'md-3', name: 'Роман Шевчук', skill: 3, salary: 240,
       perk: 'Практик', perkText: 'Ровная работа насоса без бонусов.',
-      mods: {} }
+      mods: {} },
+    { id: 'md-4', name: 'Назар', skill: 5, salary: 470,
+      character: 'Спокойный полевой технолог: сначала проверит грунт и воду, потом даст насосам нагрузку.',
+      perk: 'Запас по давлению', perkText: 'Окно безопасного давления шире на 8 бар.',
+      mods: { window: 8 } },
+    { id: 'md-5', name: 'Витямба', skill: 4, salary: 350,
+      character: 'Весёлый экспериментатор, который помнит каждую свою замесь и не льёт добавки на глаз.',
+      perk: 'Точная замесь', perkText: 'Расход раствора и добавок −15%.',
+      mods: { save: 0.85 } },
+    { id: 'md-6', name: 'Вовчански', skill: 4, salary: 390,
+      character: 'Немногословный специалист по тяжёлым грунтам; при гравии и скале заранее бережёт запас давления.',
+      perk: 'Экономный тяжёлый контур', perkText: 'Окно давления шире на 6 бар, расход раствора и добавок −10%.',
+      mods: { window: 6, save: 0.9 } }
   ],
   mechanic: [
     { id: 'mc-1', name: 'Николай Бондарь', skill: 5, salary: 450,
@@ -62,7 +74,15 @@ export const CANDIDATES = {
       mods: { repair: 0.6 } },
     { id: 'mc-3', name: 'Данила Крылов', skill: 3, salary: 220,
       perk: 'Дешёвое обслуживание', perkText: 'Стоимость ремонтов −25%.',
-      mods: { repairCost: 0.75 } }
+      mods: { repairCost: 0.75 } },
+    { id: 'mc-4', name: 'Алексей Михайлович', skill: 5, salary: 480,
+      character: 'Старой школы: перед сменой лично проверяет каждую штангу и не терпит работы на изношенном инструменте.',
+      perk: 'Бережный привод', perkText: 'Износ штанг −22%, аварийный ремонт дешевле на 10%.',
+      mods: { wear: 0.78, repairCost: 0.9 } },
+    { id: 'mc-5', name: 'Максим Петрович', skill: 4, salary: 400,
+      character: 'На площадке всегда с ящиком инструмента; чинит на ходу и быстро возвращает установку в работу.',
+      perk: 'Ремонт без простоя', perkText: 'Простои при ремонте −30%, но обслуживание обходится немного дороже.',
+      mods: { repair: 0.7, repairCost: 1.08 } }
   ],
   foreman: [
     { id: 'fm-1', name: 'Кирилл', skill: 5, salary: 640,
@@ -102,6 +122,29 @@ export const MIXES = {
     note: 'Рабочий вариант для большинства грунтов.' },
   water: { id: 'water', name: 'Техническая вода', cost: 400, window: -7, clean: 0.72,
     note: 'Дёшево, но слабый вынос шлама и высокий риск выхода раствора.' }
+};
+
+export const SWIVELS = [
+  { id: 'compact', name: 'Компактный вертлюг', capacity: 72, cost: 900, bearing: 1.08,
+    hint: 'Лёгкий и недорогой, подходит для спокойной протяжки.' },
+  { id: 'standard', name: 'Усиленный вертлюг', capacity: 92, cost: 1750, bearing: 1,
+    hint: 'Рабочий баланс грузоподъёмности и ресурса подшипника.' },
+  { id: 'heavy', name: 'Тяжёлый вертлюг', capacity: 112, cost: 2900, bearing: 0.88,
+    hint: 'Большой запас по усилию и усиленный подшипник для снижения нагрева.' }
+];
+
+// Ориентир замеса и конечный запас бентонита на 100 м проходки.
+export const MUD_RECIPES = {
+  loam: { soil: 'loam', mix: 'bentonite', bentoniteAllowanceKgPer100m: 42, bentoniteUseKgPer100m: 26,
+    polymerLPer100m: 0, hint: 'Базовая бентонитовая суспензия; поддерживайте равномерный вынос шлама.' },
+  sand: { soil: 'sand', mix: 'polymer', bentoniteAllowanceKgPer100m: 65, bentoniteUseKgPer100m: 50,
+    polymerLPer100m: 18, hint: 'Усиленная стабилизация стенок и запас раствора против осыпания и поглощения.' },
+  clay: { soil: 'clay', mix: 'bentonite', bentoniteAllowanceKgPer100m: 36, bentoniteUseKgPer100m: 22,
+    polymerLPer100m: 4, hint: 'Умеренная вязкость: не завышайте подачу в плотной глине.' },
+  gravel: { soil: 'gravel', mix: 'polymer', bentoniteAllowanceKgPer100m: 76, bentoniteUseKgPer100m: 62,
+    polymerLPer100m: 24, hint: 'Резерв для выноса крупного шлама и компенсации возможных потерь.' },
+  rock: { soil: 'rock', mix: 'bentonite', bentoniteAllowanceKgPer100m: 48, bentoniteUseKgPer100m: 34,
+    polymerLPer100m: 10, hint: 'Стабильная несущая суспензия; следите за циркуляцией и температурой инструмента.' }
 };
 
 const LAYER_PALETTES = {
@@ -267,16 +310,29 @@ export function prepareContract(c) {
 export function makeReamers(c) {
   const base = c.od;
   const opts = [
-    { ratio: 1.1, name: 'Компактный', hint: 'Легче тянуть на расширении, но высокий риск затяжки трубы.' },
-    { ratio: 1.35, name: 'Расчётный', hint: 'Оптимально для диаметра коммуникации и грунта.' },
-    { ratio: 1.7, name: 'Усиленный', hint: 'Больше диаметр скважины, выше нагрузка и риск выхода раствора.' }
+    { id: 'r1', type: 'standard', ratio: 1.1, name: 'Компактный', cost: 1400,
+      load: 1.1, soilSuitability: ['loam', 'sand', 'clay', 'gravel', 'rock'],
+      hint: 'Легче тянуть на расширении, но высокий риск затяжки трубы.' },
+    { id: 'r2', type: 'standard', ratio: 1.35, name: 'Расчётный', cost: 2100,
+      load: 1.35, soilSuitability: ['loam', 'sand', 'clay', 'gravel', 'rock'],
+      hint: 'Оптимальный компромисс диаметра скважины и нагрузки для большинства грунтов.' },
+    { id: 'r3', type: 'standard', ratio: 1.7, name: 'Усиленный', cost: 2900,
+      load: 1.7, soilSuitability: ['loam', 'sand', 'clay', 'gravel', 'rock'],
+      hint: 'Большой диаметр скважины, но выше нагрузка на установку и риск выхода раствора.' }
   ];
-  return opts.map((o, i) => ({
+  if (c.soil === 'sand') {
+    opts.push(
+      { id: 'sand-cutter', type: 'sand-cutting', ratio: 1.25, name: 'Пескорезный расширитель', cost: 2450,
+        load: 1.18, soilSuitability: ['sand'],
+        hint: 'Режущие кромки разрыхляют плотные песчаные прослои; снижает риск затяжки, но требует устойчивой промывки.' },
+      { id: 'sand-barrel', type: 'sand-barrel', ratio: 1.5, name: 'Песчаный бочонок', cost: 3150,
+        load: 1.32, soilSuitability: ['sand'],
+        hint: 'Бочонковый корпус удерживает стенку песчаной скважины при расширении; выше тяговая нагрузка.' }
+    );
+  }
+  return opts.map(o => ({
     ...o,
-    id: `r${i + 1}`,
-    dia: Math.round(base * o.ratio / 10) * 10,
-    cost: [1400, 2100, 2900][i],
-    load: o.ratio
+    dia: Math.round(base * o.ratio / 10) * 10
   }));
 }
 
